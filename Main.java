@@ -14,7 +14,6 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 class GradientPanel extends JPanel {
@@ -52,7 +51,7 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
     private final char[] charset;
     private Map<Character, Integer> charToNumberMap;
     private String originalText;
-    private List<Integer> originalPixels;
+    private ArrayList<Integer> originalPixels;
     private BufferedImage originalImage;
     private Map<Integer, Character> numberToCharMap;
     private String encodedText;
@@ -66,44 +65,34 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         addListeners();
         setFileChooserFont();
 
-        charset = generateCharset('!');
+        charset = generateCharset();
         numberToCharMap = createNumberToCharMap();
         charToNumberMap = createCharToNumberMap();
 
         setVisible(true);
     }
 
+    // Символы с кодами 0-255
+    private char[] generateCharset() {
+        char[] charset = new char[256];
+        for (int i = 0; i < 256; i++) {
+            charset[i] = (char) i;
+        }
+        return charset;
+    }
+
     private Map<Integer, Character> createNumberToCharMap() {
         Map<Integer, Character> map = new HashMap<>();
         for (int i = 0; i <= 255; i++) {
-            char c = charset[i % charset.length];
-            map.put(i, c);
+            map.put(i, charset[i]);
         }
         return map;
-    }
-
-    private char[] generateCharset(char startChar) {
-        char[] charset = new char[256];
-        int charIndex = 0;
-        for (int i = (int) startChar; i < 65536; i++) {
-            char c = (char) i;
-            if (Character.isDefined(c) && Character.isLetterOrDigit(c)) {
-                charset[charIndex++] = c;
-                if (charIndex == 256) break;
-            }
-        }
-        for (int i = charIndex; i < 256; i++) {
-            charset[i] = ' ';
-        }
-        return charset;
     }
 
     private Map<Character, Integer> createCharToNumberMap() {
         Map<Character, Integer> map = new HashMap<>();
         for (int i = 0; i <= 255; i++) {
-            char c = numberToCharMap.get(i);
-            map.put(c, i);
-
+            map.put(charset[i], i);
         }
         return map;
     }
@@ -254,6 +243,7 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         backButton.addActionListener(this);
     }
 
+    // Загрузка файла, текст или изображение
     private void handleDownloadAction(ActionEvent e) {
         JFileChooser fileChooser = new JFileChooser();
         FileNameExtensionFilter imageFilter = new FileNameExtensionFilter("Изображения", "jpg", "jpeg", "png", "gif", "bmp");
@@ -271,8 +261,13 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
                     try (BufferedReader reader = new BufferedReader(new FileReader(selectedFile))) {
                         StringBuilder stringBuilder = new StringBuilder();
                         String line;
+                        boolean first = true;
                         while ((line = reader.readLine()) != null) {
-                            stringBuilder.append(line).append("\n");
+                            if (!first) {
+                                stringBuilder.append("\n");
+                            }
+                            stringBuilder.append(line);
+                            first = false;
                         }
                         textArea.setText(stringBuilder.toString());
 
@@ -283,6 +278,9 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
                     currentProcessedImage = null;
                     originalImage = null;
                     originalPixels = null;
+
+                    // Показываем текстовую область без изображения
+                    showTextOnly();
 
                 } else if (fileExtension.equalsIgnoreCase("jpg") || fileExtension.equalsIgnoreCase("jpeg") ||
                         fileExtension.equalsIgnoreCase("png") || fileExtension.equalsIgnoreCase("gif") ||
@@ -302,6 +300,8 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
                         imageScrollPane.repaint();
                         textScrollPane.setPreferredSize(new Dimension(imageWidth, imageHeight));
                         originalPixels = getPixelValues(currentProcessedImage);
+                        // Показываем изображение
+                        showImage();
                     } else {
                         handleImageProcessingError(new IOException("Не удалось загрузить изображение"));
                     }
@@ -362,35 +362,61 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         return new ImageIcon(scaledImage);
     }
 
+    // Сохранение: если показан текст, сохраняем текст, иначе сохраняем изображение
     private void saveImage() {
-        String textToSave = textArea.getText();
-
-        if (textToSave == null || textToSave.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Нет текста для сохранения", "Ошибка", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Сохранить текстовый файл");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("Текстовые файлы (*.txt)", "txt"));
-
-        int userSelection = fileChooser.showSaveDialog(this);
-
-        if (userSelection == JFileChooser.APPROVE_OPTION) {
-            File fileToSave = fileChooser.getSelectedFile();
-            if (!fileToSave.getName().toLowerCase().endsWith(".txt")) {
-                fileToSave = new File(fileToSave.getAbsolutePath() + ".txt");
+        if (showingText) {
+            // Сохраняем текст
+            String textToSave = textArea.getText();
+            if (textToSave == null || textToSave.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Нет текста для сохранения", "Ошибка", JOptionPane.ERROR_MESSAGE);
+                return;
             }
 
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileToSave))) {
-                writer.write(textToSave);
-                JOptionPane.showMessageDialog(this, "Текст сохранен в файл: " + fileToSave.getAbsolutePath(), "Успех", JOptionPane.INFORMATION_MESSAGE);
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Ошибка при сохранении файла: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Сохранить текстовый файл");
+            fileChooser.setFileFilter(new FileNameExtensionFilter("Текстовые файлы (*.txt)", "txt"));
+
+            int userSelection = fileChooser.showSaveDialog(this);
+
+            if (userSelection == JFileChooser.APPROVE_OPTION) {
+                File fileToSave = fileChooser.getSelectedFile();
+                if (!fileToSave.getName().toLowerCase().endsWith(".txt")) {
+                    fileToSave = new File(fileToSave.getAbsolutePath() + ".txt");
+                }
+
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileToSave))) {
+                    writer.write(textToSave);
+                    JOptionPane.showMessageDialog(this, "Текст сохранен в файл: " + fileToSave.getAbsolutePath(), "Успех", JOptionPane.INFORMATION_MESSAGE);
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(this, "Ошибка при сохранении файла: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        } else {
+            // Сохраняем изображение
+            if (currentProcessedImage == null) {
+                JOptionPane.showMessageDialog(this, "Нет изображения для сохранения", "Ошибка", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Сохранить изображение");
+            fileChooser.setFileFilter(new FileNameExtensionFilter("Изображения PNG", "png"));
+            int userSelection = fileChooser.showSaveDialog(this);
+            if (userSelection == JFileChooser.APPROVE_OPTION) {
+                File fileToSave = fileChooser.getSelectedFile();
+                if (!fileToSave.getName().toLowerCase().endsWith(".png")) {
+                    fileToSave = new File(fileToSave.getAbsolutePath() + ".png");
+                }
+                try {
+                    ImageIO.write(currentProcessedImage, "png", fileToSave);
+                    JOptionPane.showMessageDialog(this, "Изображение сохранено в файл: " + fileToSave.getAbsolutePath(), "Успех", JOptionPane.INFORMATION_MESSAGE);
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(this, "Ошибка при сохранении изображения: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+                }
             }
         }
     }
 
+    // Переключение на текстовую область (используется, когда есть изображение)
     private void replaceImageWithTextField() {
         if (currentProcessedImage == null) return;
         contentPane.remove(imageScrollPane);
@@ -401,6 +427,17 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         contentPane.repaint();
     }
 
+    // Переключение на текстовую область (когда изображения нет)
+    private void showTextOnly() {
+        contentPane.remove(imageScrollPane);
+        contentPane.add(textScrollPane, BorderLayout.CENTER);
+        backButton.setVisible(false);
+        showingText = true;
+        contentPane.revalidate();
+        contentPane.repaint();
+    }
+
+    // Переключение на изображение
     private void showImage() {
         if (currentProcessedImage == null) return;
         contentPane.remove(textScrollPane);
@@ -427,6 +464,297 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         return pixelData.toString();
     }
 
+    // Кодирование пикселей в текстб добавляет заголовок с размерами
+    private String encodePixelData(String pixelData) {
+        if (currentProcessedImage == null) return "";
+        int width = currentProcessedImage.getWidth();
+        int height = currentProcessedImage.getHeight();
+        StringBuilder encoded = new StringBuilder();
+        encoded.append(numberToCharMap.get((width >> 8) & 0xFF));
+        encoded.append(numberToCharMap.get(width & 0xFF));
+        encoded.append(numberToCharMap.get((height >> 8) & 0xFF));
+        encoded.append(numberToCharMap.get(height & 0xFF));
+
+        String[] numbers = pixelData.split("\\s+");
+        for (String numStr : numbers) {
+            if (numStr.isEmpty()) continue;
+            try {
+                int num = Integer.parseInt(numStr);
+                encoded.append(numberToCharMap.get(num));
+            } catch (NumberFormatException e) {
+                // игнорируем
+            }
+        }
+        return encoded.toString();
+    }
+
+    // Декодирование текста в числа (читает заголовок)
+    private String decodePixelData(String encodedText) throws IllegalArgumentException {
+        if (encodedText == null || encodedText.length() < 4) {
+            throw new IllegalArgumentException("Закодированная строка слишком коротка (отсутствует заголовок)");
+        }
+        char wHighChar = encodedText.charAt(0);
+        char wLowChar = encodedText.charAt(1);
+        char hHighChar = encodedText.charAt(2);
+        char hLowChar = encodedText.charAt(3);
+
+        Integer wHigh = charToNumberMap.get(wHighChar);
+        Integer wLow = charToNumberMap.get(wLowChar);
+        Integer hHigh = charToNumberMap.get(hHighChar);
+        Integer hLow = charToNumberMap.get(hLowChar);
+
+        if (wHigh == null || wLow == null || hHigh == null || hLow == null) {
+            throw new IllegalArgumentException("Заголовок содержит неизвестные символы");
+        }
+
+        int width = (wHigh << 8) | wLow;
+        int height = (hHigh << 8) | hLow;
+        this.imageWidth = width;
+        this.imageHeight = height;
+
+        StringBuilder decoded = new StringBuilder();
+        for (int i = 4; i < encodedText.length(); i++) {
+            char ch = encodedText.charAt(i);
+            Integer num = charToNumberMap.get(ch);
+            if (num == null) {
+                throw new IllegalArgumentException("Неизвестный символ в данных: " + ch + " (код " + (int) ch + ")");
+            }
+            decoded.append(num).append(" ");
+        }
+        return decoded.toString();
+    }
+
+    // Декодирование текста в изображение
+    private void decodeText() {
+        String encodedText = textArea.getText();
+        if (encodedText == null || encodedText.isEmpty()) {
+            JOptionPane.showMessageDialog(Main.this, "Нет текста для расшифровки", "Ошибка", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String decodedText;
+        try {
+            decodedText = decodePixelData(encodedText);
+        } catch (IllegalArgumentException ex) {
+            JOptionPane.showMessageDialog(Main.this, "Ошибка при расшифровке: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            String[] rgbValues = decodedText.trim().split("\\s+");
+            int width = this.imageWidth;
+            int height = this.imageHeight;
+
+            if (rgbValues.length >= width * height * 3) {
+                BufferedImage restoredImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+                int index = 0;
+                for (int y = 0; y < height; y++) {
+                    for (int x = 0; x < width; x++) {
+                        int red = Integer.parseInt(rgbValues[index++]);
+                        int green = Integer.parseInt(rgbValues[index++]);
+                        int blue = Integer.parseInt(rgbValues[index++]);
+                        Color color = new Color(red, green, blue);
+                        restoredImage.setRGB(x, y, color.getRGB());
+                    }
+                }
+                restoredImage = invertColors(restoredImage);
+                currentProcessedImage = restoredImage;
+                ImageIcon restoredIcon = scaleImage(restoredImage, imageWidth, imageHeight);
+                imageLabel.setIcon(restoredIcon);
+
+                showImage(); // показываем изображение
+            } else {
+                JOptionPane.showMessageDialog(Main.this,
+                        "Недостаточно RGB значений для восстановления изображения.\n" +
+                                "Ожидалось: " + (width * height * 3) + ", получено: " + rgbValues.length,
+                        "Ошибка", JOptionPane.ERROR_MESSAGE);
+                textArea.setText(decodedText);
+                replaceImageWithTextField();
+            }
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(Main.this, "Ошибка при преобразовании RGB значений: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+            textArea.setText(decodedText);
+            replaceImageWithTextField();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(Main.this, "Произошла общая ошибка: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+            textArea.setText(decodedText);
+            replaceImageWithTextField();
+        }
+    }
+    // Методы для шифрования текста в изображение и обратно
+
+
+    // Создаёт изображение из текста (каждый символ -> код 0-255 -> пиксель)
+    private BufferedImage createImageFromText(String text) {
+        if (text == null || text.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Нет текста для шифрования", "Ошибка", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+
+        ArrayList<Integer> numbers = new ArrayList<>();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            int code = (int) c;
+            if (code < 0 || code > 255) {
+                // Если символ вне ASCII, заменяем на '?'
+                code = 63; // '?'
+            }
+            numbers.add(code);
+        }
+
+        int dataLength = numbers.size();
+        int totalPixels = dataLength + 4; // 4 пикселя для длины
+        int side = (int) Math.ceil(Math.sqrt(totalPixels));
+        int width = side;
+        int height = side;
+
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+
+        // Длина в первых 4 пикселях (big-endian)
+        int length = dataLength;
+        int[] lenBytes = {
+                (length >> 24) & 0xFF,
+                (length >> 16) & 0xFF,
+                (length >> 8) & 0xFF,
+                length & 0xFF
+        };
+        for (int i = 0; i < 4; i++) {
+            int val = lenBytes[i];
+            int rgb = new Color(val, val, val).getRGB();
+            int x = i % width;
+            int y = i / width;
+            image.setRGB(x, y, rgb);
+        }
+
+        for (int i = 0; i < dataLength; i++) {
+            int val = numbers.get(i);
+            int rgb = new Color(val, val, val).getRGB();
+            int pos = i + 4;
+            int x = pos % width;
+            int y = pos / width;
+            image.setRGB(x, y, rgb);
+        }
+
+        return image;
+    }
+
+    // Извлекает текст из изображения
+    private void extractTextFromImage() {
+        if (currentProcessedImage == null) {
+            JOptionPane.showMessageDialog(this, "Нет изображения для расшифровки", "Ошибка", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        int width = currentProcessedImage.getWidth();
+        int height = currentProcessedImage.getHeight();
+
+        int[] lenBytes = new int[4];
+        for (int i = 0; i < 4; i++) {
+            int x = i % width;
+            int y = i / width;
+            if (y >= height) {
+                JOptionPane.showMessageDialog(this, "Изображение слишком мало для хранения длины", "Ошибка", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            int rgb = currentProcessedImage.getRGB(x, y);
+            Color c = new Color(rgb);
+            lenBytes[i] = c.getRed(); // все каналы равны, берём красный
+        }
+        int dataLength = (lenBytes[0] << 24) | (lenBytes[1] << 16) | (lenBytes[2] << 8) | lenBytes[3];
+
+        if (dataLength < 0 || dataLength > width * height - 4) {
+            JOptionPane.showMessageDialog(this, "Некорректная длина данных в изображении", "Ошибка", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        StringBuilder extracted = new StringBuilder();
+        for (int i = 0; i < dataLength; i++) {
+            int pos = i + 4;
+            int x = pos % width;
+            int y = pos / width;
+            if (y >= height) break;
+            int rgb = currentProcessedImage.getRGB(x, y);
+            Color c = new Color(rgb);
+            int num = c.getRed();
+            extracted.append((char) num);
+        }
+
+        textArea.setText(extracted.toString());
+        showTextOnly(); // показываем текст
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (e.getSource() == download) {
+            handleDownloadAction(e);
+        } else if (e.getSource() == saveButton) {
+            saveImage();
+        } else if (e.getSource() == Encoder) {
+            // Шифровать: зависит от того, что сейчас на экране
+            if (showingText) {
+                // На экране текст, создаём изображение из текста
+                String text = textArea.getText();
+                BufferedImage img = createImageFromText(text);
+                if (img != null) {
+                    currentProcessedImage = img;
+                    ImageIcon icon = scaleImage(img, 300, 300);
+                    imageLabel.setIcon(icon);
+                    imageWidth = icon.getIconWidth();
+                    imageHeight = icon.getIconHeight();
+                    imageScrollPane.setPreferredSize(new Dimension(imageWidth, imageHeight));
+                    showImage();
+                }
+            } else {
+                // На экране изображение, кодируем его в текст
+                SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
+                    @Override
+                    protected String doInBackground() throws Exception {
+                        if (currentProcessedImage != null) {
+                            BufferedImage invertedImage = invertColors(currentProcessedImage);
+                            currentProcessedImage = invertedImage;
+                            String pixelData = processImage(currentProcessedImage);
+                            return encodePixelData(pixelData);
+                        } else {
+                            return null;
+                        }
+                    }
+
+                    @Override
+                    protected void done() {
+                        try {
+                            encodedText = get();
+                            if (encodedText != null) {
+                                textArea.setText(encodedText);
+                                replaceImageWithTextField();
+                            } else {
+                                JOptionPane.showMessageDialog(Main.this, "Ошибка при обработке изображения. Изображение не загружено.", "Ошибка", JOptionPane.ERROR_MESSAGE);
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                            JOptionPane.showMessageDialog(Main.this, "Произошла ошибка: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                };
+                worker.execute();
+            }
+        } else if (e.getSource() == Decryptor) {
+            // Расшифровать, зависит от того, что сейчас на экране
+            if (showingText) {
+                // На экране текст, декодируем его в изображение
+                decodeText();
+            } else {
+                // На экране изображение, извлекаем текст из изображения
+                extractTextFromImage();
+            }
+        } else if (e.getSource() == backButton) {
+            showImage();
+        }
+    }
+
+    @Override
+    public void stateChanged(ChangeEvent e) {
+    }
+
     private String encodeText() {
         String text = textArea.getText();
         if (text == null || text.isEmpty()) {
@@ -449,147 +777,6 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         return encodedText.toString().trim();
     }
 
-    private String encodePixelData(String pixelData) {
-        StringBuilder encodedPixelData = new StringBuilder();
-        String[] numbers = pixelData.split("\\s+");
-        for (int i = 0; i < numbers.length; i++) {
-            String numberStr = numbers[i];
-            try {
-                int number = Integer.parseInt(numberStr);
-                if (numberToCharMap.containsKey(number)) {
-                    encodedPixelData.append(numberToCharMap.get(number));
-                } else {
-                    encodedPixelData.append("?");
-                }
-            } catch (NumberFormatException e) {
-                encodedPixelData.append(numberStr);
-            }
-        }
-        return encodedPixelData.toString();
-    }
-
-    private String decodePixelData(String encodedText) {
-        StringBuilder decodedPixelData = new StringBuilder();
-        for (int i = 0; i < encodedText.length(); i++) {
-            char encodedChar = encodedText.charAt(i);
-            if (charToNumberMap.containsKey(encodedChar)) {
-                int number = charToNumberMap.get(encodedChar);
-                decodedPixelData.append(number).append(" ");
-            } else {
-                decodedPixelData.append("? ");
-            }
-        }
-        return decodedPixelData.toString();
-    }
-
-    private void decodeText() {
-        String encodedText = textArea.getText();
-        if (encodedText == null || encodedText.isEmpty()) {
-            JOptionPane.showMessageDialog(Main.this, "Нет текста для расшифровки", "Ошибка", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        String decodedText = decodePixelData(encodedText);
-        if (decodedText == null) {
-            JOptionPane.showMessageDialog(Main.this, "Ошибка при расшифровке текста", "Ошибка", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        textArea.setText(decodedText);
-        replaceImageWithTextField();
-
-        // Попытка преобразовать расшифрованные данные в изображение (только если есть изображение)
-        if (originalImage != null) {
-            try {
-                String[] rgbValues = decodedText.trim().split("\\s+");
-                int width = originalImage.getWidth();
-                int height = originalImage.getHeight();
-
-                if (rgbValues.length >= width * height * 3) {
-                    BufferedImage restoredImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-                    int index = 0;
-                    for (int y = 0; y < height; y++) {
-                        for (int x = 0; x < width; x++) {
-                            int red = Integer.parseInt(rgbValues[index++]);
-                            int green = Integer.parseInt(rgbValues[index++]);
-                            int blue = Integer.parseInt(rgbValues[index++]);
-
-                            Color color = new Color(red, green, blue);
-                            restoredImage.setRGB(x, y, color.getRGB());
-                        }
-                    }
-
-                    restoredImage = invertColors(restoredImage);
-                    currentProcessedImage = restoredImage;
-                    ImageIcon restoredIcon = scaleImage(restoredImage, imageWidth, imageHeight);
-                    imageLabel.setIcon(restoredIcon);
-
-                } else {
-                    JOptionPane.showMessageDialog(Main.this, "Недостаточно RGB значений для восстановления изображения", "Ошибка", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(Main.this, "Ошибка при преобразовании RGB значений: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(Main.this, "Произошла общая ошибка: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
-            }
-        } else {
-            JOptionPane.showMessageDialog(Main.this, "Невозможно создать изображение, так как оно не загружено.", "Ошибка", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(Main::new);
-    }
-
-    @Override
-    public void actionPerformed(ActionEvent e) {
-        if (e.getSource() == download) {
-            handleDownloadAction(e);
-        } else if (e.getSource() == saveButton) {
-            saveImage();
-        } else if (e.getSource() == Encoder) {
-            SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
-                @Override
-                protected String doInBackground() throws Exception {
-                    if (currentProcessedImage != null) {
-                        BufferedImage invertedImage = invertColors(currentProcessedImage);
-                        currentProcessedImage = invertedImage;
-                        String pixelData = processImage(currentProcessedImage);
-                        return encodePixelData(pixelData);
-                    } else {
-                        return null;
-                    }
-                }
-
-                @Override
-                protected void done() {
-                    try {
-                        encodedText = get();
-                        if (encodedText != null) {
-                            textArea.setText(encodedText);
-                            replaceImageWithTextField();
-                        } else {
-                            JOptionPane.showMessageDialog(Main.this, "Ошибка при обработке изображения. Изображение не загружено.", "Ошибка", JOptionPane.ERROR_MESSAGE);
-                        }
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        JOptionPane.showMessageDialog(Main.this, "Произошла ошибка: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
-                    }
-                }
-            };
-            worker.execute();
-        } else if (e.getSource() == Decryptor) {
-            decodeText();
-        } else if (e.getSource() == backButton) {
-            showImage();
-        }
-    }
-
-    @Override
-    public void stateChanged(ChangeEvent e) {
-    }
-
     private BufferedImage copyImage(BufferedImage source) {
         BufferedImage b = new BufferedImage(source.getWidth(), source.getHeight(), source.getType());
         Graphics g = b.getGraphics();
@@ -598,9 +785,9 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
         return b;
     }
 
-    private List<Integer> getPixelValues(BufferedImage image) {
+    private ArrayList<Integer> getPixelValues(BufferedImage image) {
         if (image == null) return null;
-        List<Integer> pixels = new ArrayList<>();
+        ArrayList<Integer> pixels = new ArrayList<>();
         int width = image.getWidth();
         int height = image.getHeight();
         for (int y = 0; y < height; y++) {
@@ -609,5 +796,9 @@ public class Main extends JFrame implements ActionListener, ChangeListener {
             }
         }
         return pixels;
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(Main::new);
     }
 }
